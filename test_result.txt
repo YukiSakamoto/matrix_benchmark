@@ -1,0 +1,14 @@
+./matrix.x
+start: length: 2000
+====================ijk-exchange====================
+3825 milliseconds
+5.33333Gflops
+a2(0,0) = 1
+====================ijk-exchange + unroll====================
+5599 milliseconds
+3.2Gflops
+a2(0,0) = 1
+====================Eigen====================
+eigen_2(0,0) = 1
+998 milliseconds
+16.0321Gflops
