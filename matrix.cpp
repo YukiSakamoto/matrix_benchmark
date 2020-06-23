@@ -5,6 +5,8 @@
 #include <Eigen/Eigen> 
 #include <Eigen/Core>   // for Solver
 
+#include <x86intrin.h>
+
 double flops(const double &secs, size_t length)
 {
     double len_ = static_cast<double>(length);
@@ -17,6 +19,10 @@ double gflops(const double &secs, size_t length)
     double len_ = static_cast<double>(length);
     double ret = (2*len_*len_*len_)/(1000*1000*1000)/secs;
     return ret;
+}
+
+void print256d(__m256d x) {
+  printf("%f %f %f %f\n", x[3], x[2], x[1], x[0]);
 }
 
 template <typename T>
@@ -153,6 +159,32 @@ public:
         return ret;
     }
 
+    Matrix dot5(const Matrix &rhs) const
+    {
+        // ijk indicess exchange
+        if (this->col() != rhs.row()) { throw;  }
+
+        Matrix ret(this->row() , rhs.col() );
+        for(auto i = 0; i < this->row(); i++) {
+            for(auto k = 0; k < this->col(); k++) {
+                double a_ik = (*this)(i,k);
+                __m256d v1 = _mm256_set_pd(a_ik, a_ik, a_ik, a_ik); 
+                for(auto j = 0; j < rhs.col(); j+=4) {
+                    size_t index_kj = k * this->cols_ + j;
+                    __m256d v2 = _mm256_load_pd( rhs.container_.data() + index_kj );
+
+                    size_t index_ij = i * this->cols_ + j;
+                    __m256d v3 = _mm256_load_pd( ret.container_.data() + index_ij );
+                    v3 += v1 * v2;
+                    _mm256_store_pd(ret.container_.data() + index_ij, v3);
+                    //ret(i,j) +=  (*this)(i,k) * rhs(k,j);
+                }
+            }
+        }
+        return ret;
+
+    }
+
     bool operator==(const Matrix &rhs) const
     {
         bool ret = true;
@@ -195,7 +227,8 @@ private:
 int main(void)
 {
 
-    const size_t len = 2000;
+    std::cout << "sizeof(double): " << sizeof(double) << std::endl;
+    const size_t len = 2048;
 
     Matrix<double> a = Matrix<double>::Identity(len);
     std::cout << "start: length: " << len << std::endl;
@@ -227,6 +260,17 @@ int main(void)
         std::cout << "====================" << "ijk-exchange + unroll" << "====================" <<std::endl;
         auto start = std::chrono::system_clock::now();
         auto a2 = a.dot4(a);
+        auto end = std::chrono::system_clock::now();
+        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end-start).count() ;
+        std::cout << elapsed << " milliseconds" << std::endl;
+        std::cout << gflops(elapsed/1000, len) << "Gflops" << std::endl;
+        std::cout << "a2(0,0) = " << a2(0,0) << std::endl;
+    }
+
+    {
+        std::cout << "====================" << "ijk-exchange + simd" << "====================" <<std::endl;
+        auto start = std::chrono::system_clock::now();
+        auto a2 = a.dot5(a);
         auto end = std::chrono::system_clock::now();
         auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end-start).count() ;
         std::cout << elapsed << " milliseconds" << std::endl;
